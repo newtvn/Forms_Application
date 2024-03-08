@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Survey Form</title>
+    <title>Sky_Form</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <style>
         body {
@@ -58,27 +58,7 @@
 <body>
 
 <div class="container">
-    <h1>Survey Form</h1>
-    <form id="surveyForm" method="POST" enctype="multipart/form-data">
-        <div class="form-group">
-            <label for="full_name">Full Name <span class="required">*</span></label>
-            <input type="text" id="full_name" name="full_name" required>
-        </div>
 
-        <div class="form-group">
-            <label for="email_address">Email Address <span class="required">*</span></label>
-            <input type="email" id="email_address" name="email_address" required>
-        </div>
-
-        <div class="form-group">
-            <label for="description">Description</label>
-            <textarea id="description" name="description" rows="4" required></textarea>
-        </div>
-
-        <!-- Add other form fields as necessary -->
-        
-        <button type="submit">Submit</button>
-    </form>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
