@@ -136,8 +136,6 @@ document.addEventListener('DOMContentLoaded', function() {
             });
     }
 
-
-
     fetchQuestions();
     fetchResponses();
     
