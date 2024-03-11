@@ -8,33 +8,36 @@
 </head>
 <body>
 
-<div class="container" id="surveyForm">
-    <!-- Your form elements go here -->
+<nav class="navbar navbar-expand-lg bg-body-tertiary">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="#"><i class="fas fa-star"></i><b>Sky Survey Form</b></a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarSupportedContent">
+        <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+        </ul>
+        <form class="d-flex" role="search">
+          <button>
+            <a class="nav-link active" aria-current="page" href="form_responses.php">Responses</a>
+          </button>
+        </form>
+      </div>
+    </div>
+  </nav>
+
+<div class="container">
+    <form id="surveyForm">
+    </form>
+    <div id="previewArea" style="display:none;">
+        <h3>Preview Responses</h3>
+        <div id="responsesPreview"><!-- Preview blah blahh blah  --></div>
+        <button type="button" id="editResponsesButton">Edit Responses</button>
+    </div>
 </div>
 
+<script src="script.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script>
-    document.getElementById('surveyForm').addEventListener('submit', function(event) {
-        event.preventDefault();
-        const formData = new FormData(this);
-        fetch('http://localhost/forms_application/api.php?action=submit_responses', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                alert('Your response has been recorded.');
-            } else {
-                throw new Error('An error occurred while submitting the form.');
-            }
-        })
-        .catch((error) => {
-            console.error('Error:', error);
-            alert('An error occurred. Please try again.');
-        });
-    });
-</script>
 
 </body>
 </html>
