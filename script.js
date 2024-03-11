@@ -1,6 +1,6 @@
 document.addEventListener('DOMContentLoaded', function() {
     const surveyForm = document.getElementById('surveyForm');
-    const formId = 1;
+    const formId = 4;
 
     function fetchQuestions() {
         fetch(`http://localhost/forms_application/api.php?action=get_questions&formId=4`)
@@ -113,7 +113,33 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    function fetchResponses() {
+        fetch(`http://localhost/forms_application/api.php?action=get_all_responses`)
+            .then(response => response.json())
+            .then(data => {
+                if (data && Array.isArray(data)) {
+                    const filteredResponses = data.filter(response => response.FormID == formId);
+                    if (responsesContainer) {
+                        responsesContainer.innerHTML = ''; // Clear existing responses
+                        filteredResponses.forEach((response) => {
+                            const div = document.createElement('div');
+                            div.innerHTML = `<p>Question: ${response.QuestionText}</p><p>Answer: ${response.QuestionResponse}</p>`;
+                            responsesContainer.appendChild(div);
+                        });
+                    }
+                } else {
+                    throw new Error('Failed to fetch responses.');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+    }
+
+
+
     fetchQuestions();
+    fetchResponses();
     
     surveyForm.addEventListener('submit', function (event) {
         event.preventDefault();
@@ -121,3 +147,10 @@ document.addEventListener('DOMContentLoaded', function() {
         submitResponses(formData);
     });
 });
+
+
+
+
+    
+
+  
