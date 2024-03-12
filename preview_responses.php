@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sky Survey Form</title>
+    <title>Preview Sky Survey Form Responses</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -10,18 +10,18 @@
 
 <nav class="navbar navbar-expand-lg bg-light">
     <div class="container-fluid">
-        <a class="navbar-brand" href="#"><b>Sky Survey Form</b></a>
+        <a class="navbar-brand" href="#"><b>Preview Sky Survey Form Responses</b></a>
     </div>
 </nav>
 
 <div class="container mt-4">
-    <form id="surveyForm" action="preview_response.php" method="POST">
-        <!-- Form content will be populated by JavaScript -->
-        <button type="submit" id="previewAnswersButton" class="btn custom-btn mt-3">Preview Answers</button>
+    <h3>Preview Responses</h3>
+    <form id="previewForm" method="POST" action="submit_to_database.php">
+        <!-- Form responses will be populated here -->
+        <button type="submit" id="submitFormButton" class="btn custom-btn">Submit Responses</button>
     </form>
 </div>
 
-<script src="script.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
 </body>
