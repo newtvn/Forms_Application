@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -15,8 +16,8 @@
 </nav>
 
 <div class="container mt-4">
-    <form id="surveyForm" action="preview_response.php" method="POST">
-        <!-- Form content will be populated by JavaScript -->
+    <form id="surveyForm" method="POST">
+        <!-- Dynamic form elements will be inserted here by script.js -->
         <button type="submit" id="previewAnswersButton" class="btn custom-btn mt-3">Preview Answers</button>
     </form>
 </div>
@@ -26,3 +27,6 @@
 
 </body>
 </html>
+
+
+

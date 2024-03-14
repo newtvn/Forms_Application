@@ -1,20 +1,18 @@
-/* General Body Styling */
 body {
     background: linear-gradient(135deg, #4d3319 0%, #1a1a00 100%);
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     color: #fff;
+    
 }
 
-/* Navbar Styling */
 .navbar {
-    background-color: #5c3c00; /* Adjusted to match button color */
+    background-color: #5c3c00; 
 }
 
 .navbar-brand {
     font-weight: bold;
 }
 
-/* Button Styling */
 .btn.custom-btn {
     padding: .375rem .75rem;
     background-color: #5c3c00;

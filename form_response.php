@@ -14,7 +14,7 @@
     </div>
 </nav>
 <div class="container mt-4">
-    <h2>Responses -- Form ID: <?php echo $formId = 4; ?></h2>
+    <h2>Responses -- Form ID: <?php echo $formId = 6; ?></h2>
     <div class="table-responsive">
         <table class="table table-striped">
             <thead>

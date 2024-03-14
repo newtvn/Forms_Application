@@ -1,51 +1,141 @@
 document.addEventListener('DOMContentLoaded', function() {
     const surveyForm = document.getElementById('surveyForm');
-
     fetchQuestions();
-
     surveyForm.addEventListener('submit', function(event) {
-        event.preventDefault(); // Prevent the default form submission
-        submitForm(); // Submit the form data
+        event.preventDefault();
+        submitForm();
     });
 });
 
 function fetchQuestions() {
-    fetch(`http://localhost/forms_application/api.php?action=get_questions&formId=4`)
-        .then(response => response.text()) // Assuming the response is now XML
+    fetch(`http://localhost/forms_application/api.php?action=get_questions&formId=6`)
+        .then(response => response.text())
         .then(str => (new window.DOMParser()).parseFromString(str, "text/xml"))
         .then(data => {
-            const questions = data.getElementsByTagName('question');
+            const questions = data.querySelectorAll('question');
             generateFormFields(questions);
         })
         .catch(error => console.error('Error fetching questions:', error));
 }
 
-function generateFormFields(questions) {
-    const form = document.getElementById('surveyForm');
-    Array.from(questions).forEach(question => {
-        const formGroup = document.createElement('div');
-        formGroup.className = 'mb-3';
+function submitForm() {
+    const surveyForm = document.getElementById('surveyForm');
+    var xmlDataString = `
+        <request>
+            <action>submit_responses</action>
+            <formId>${surveyForm.elements['formId'].value}</formId>
+            <responses>
+                <response>
+                    <full_name>${surveyForm.elements['full_name'].value}</full_name>
+                    <email_address>${surveyForm.elements['email_address'].value}</email_address>
+                    <description>${surveyForm.elements['description'].value}</description>
+                    <gender>${surveyForm.elements['gender'].value}</gender>
+                    <programming_stack>${surveyForm.elements['programming_stack'].value}</programming_stack>
+                    <!-- Add other form fields as needed -->
+                </response>
+            </responses>
+        </request>
+    `;
 
-        const label = document.createElement('label');
-        label.className = 'form-label';
-        label.textContent = question.getElementsByTagName('text')[0].textContent;
-        label.htmlFor = question.getAttribute('name');
-
-        const input = document.createElement('input');
-        input.type = question.getAttribute('type');
-        input.className = 'form-control';
-        input.name = question.getAttribute('name');
-        input.id = question.getAttribute('name');
-        input.required = question.getAttribute('required') === 'yes';
-
-        formGroup.appendChild(label);
-        formGroup.appendChild(input);
-        form.insertBefore(formGroup, form.lastElementChild); 
+    fetch('http://localhost/forms_application/api.php?action=submit_responses&formId=6', { 
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/xml; charset=utf-8'
+        },
+        body: xmlDataString
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.text(); // or response.xml() if it returns XML
+    })
+    .then(data => {
+        console.log(data);
+        alert('Your responses have been saved!');
+    })
+    .catch(error => {
+        console.error('Error submitting form:', error);
+        alert('There was a problem saving your responses.');
     });
 }
 
+function generateFormFields(questions) {
+    const form = document.getElementById('surveyForm');
+    
+    questions.forEach(question => {
+        const type = question.getAttribute('type');
+        const name = question.getAttribute('name');
+        const label = question.querySelector('text').textContent;
+        const required = question.getAttribute('required') === 'yes';
+        const formGroup = document.createElement('div');
+        formGroup.className = 'mb-3';
+        
+        const labelElement = document.createElement('label');
+        labelElement.className = 'form-label';
+        labelElement.textContent = label;
+        labelElement.htmlFor = name;
+        formGroup.appendChild(labelElement);
+        
+        let input;
+        if (type === 'choice') {
+            const multiple = question.getAttribute('multiple') === 'yes';
+            if (multiple) {
+                input = document.createElement('div');
+                const options = question.querySelectorAll('option');
+                options.forEach(option => {
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.name = name;
+                    checkbox.value = option.getAttribute('value');
+                    if (required) checkbox.required = true;
+                    input.appendChild(checkbox);
+
+                    const optionLabel = document.createElement('label');
+                    optionLabel.textContent = option.textContent;
+                    input.appendChild(optionLabel);
+                });
+            } else {
+                // Handle as radio buttons
+                input = document.createElement('div');
+                const options = question.querySelectorAll('option');
+                options.forEach(option => {
+                    const radio = document.createElement('input');
+                    radio.type = 'radio';
+                    radio.name = name;
+                    radio.value = option.getAttribute('value');
+                    if (required) radio.required = true;
+                    input.appendChild(radio);
+
+                    const optionLabel = document.createElement('label');
+                    optionLabel.textContent = option.textContent;
+                    input.appendChild(optionLabel);
+                });
+            }
+        } else if (type === 'file') {
+            input = document.createElement('input');
+            input.type = 'file';
+            if (question.getAttribute('multiple') === 'yes') {
+                input.setAttribute('multiple', '');
+            }
+        } else {
+            input = document.createElement('input');
+            input.type = 'text';
+        }
+        
+        input.className = 'form-control';
+        input.name = name;
+        input.id = name;
+        if (required) input.required = true;
+        
+        formGroup.appendChild(input);
+        form.insertBefore(formGroup, form.lastElementChild);
+    });
+}
+
+
 function fetchResponses() {
-    fetch(`http://localhost/forms_application/api.php?action=get_all_responses&formId=4`)
+    fetch(`http://localhost/forms_application/api.php?action=get_all_responses&formId=6`)
         .then(handleResponse)
         .then(data => populateResponses(data.responses))
         .catch(handleError);
@@ -53,18 +143,14 @@ function fetchResponses() {
 
 function populateResponses(responses) {
     const tableBody = document.getElementById('responseTableBody');
-    // Code to populate table body
-}
-
-function submitResponses(formData) {
-    fetch('http://localhost/forms_application/api.php', {
-        method: 'POST',
-        body: JSON.stringify({ action: 'submit_responses', formId: 4, responses: Object.fromEntries(formData) }),
-        headers: { 'Content-Type': 'application/json' }
-    })
-    .then(handleResponse)
-    .then(data => alert('Survey response has been recorded.'))
-    .catch(handleError);
+    tableBody.innerHTML = '';
+    responses.forEach(response => {
+        const row = tableBody.insertRow();
+        Object.values(response).forEach(text => {
+            const cell = row.insertCell();
+            cell.textContent = text;
+        });
+    });
 }
 
 function downloadCertificate(certificateId) {
@@ -72,7 +158,6 @@ function downloadCertificate(certificateId) {
         alert("No certificate ID provided.");
         return;
     }
-    
     fetch(`http://localhost/forms_application/api.php?action=download_certificate&certificateId=${certificateId}`)
         .then(response => {
             if (!response.ok) throw new Error('Network response was not ok');
@@ -82,11 +167,11 @@ function downloadCertificate(certificateId) {
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `certificate_${certificateId}.pdf`; 
-            document.body.appendChild(a); 
+            a.download = `certificate_${certificateId}.pdf`;
+            document.body.appendChild(a);
             a.click();
-            window.URL.revokeObjectURL(url); 
-            document.body.removeChild(a); 
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
         })
         .catch(error => {
             console.error('Download error:', error);
@@ -101,38 +186,4 @@ function handleResponse(response) {
 
 function handleError(error) {
     console.error('Fetch error:', error);
-}
-
-
-
-document.addEventListener('DOMContentLoaded', function() {
-    const surveyForm = document.getElementById('surveyForm');
-
-    fetchQuestions();
-
-    surveyForm.addEventListener('submit', function(event) {
-        event.preventDefault(); // Prevent the default form submission
-        submitForm(); // Submit the form data
-    });
-});
-
-function submitForm() {
-    const surveyForm = document.getElementById('surveyForm');
-    const formData = new FormData(surveyForm);
-    const formObject = Object.fromEntries(formData);
-
-    fetch('http://localhost/forms_application/api.php', {
-        method: 'POST',
-        body: JSON.stringify({ action: 'submit_responses', formId: 4, responses: formObject }),
-        headers: { 'Content-Type': 'application/json' }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert('Your responses have been saved!');
-        } else {
-            alert('There was a problem saving your responses.');
-        }
-    })
-    .catch(error => console.error('Error submitting form:', error));
 }
