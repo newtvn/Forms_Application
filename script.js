@@ -135,7 +135,7 @@ function generateFormFields(questions) {
 
 
 function fetchResponses() {
-    fetch(`http://localhost/forms_application/api.php?action=get_all_responses&formId=6`)
+    fetch(`http://localhost/forms_application/api.php?action=get_all_responses`)
         .then(handleResponse)
         .then(data => populateResponses(data.responses))
         .catch(handleError);

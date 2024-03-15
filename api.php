@@ -38,7 +38,6 @@ $method = $_SERVER['REQUEST_METHOD'];
 
 switch ($method) {
     case 'PUT':
-        libxml_use_internal_errors(true);
         $inputXmlString = file_get_contents('php://input');
         
         if (trim($inputXmlString) === '') {
@@ -63,19 +62,33 @@ switch ($method) {
         }
     
         $action = isset($inputXml->action) ? (string)$inputXml->action : null;
-        $formId = isset($inputXml->formId) ? (int)$inputXml->formId : null;
-    
-        if ($action !== 'submit_responses' || empty($formId)) {
+        
+        if ($action) {
+            switch ($action) {
+                case 'submit_responses':
+                    $formId = isset($inputXml->formId) ? (int)$inputXml->formId : null;
+                    if (empty($formId)) {
+                        sendXmlHeader();
+                        echo '<error>Missing formId</error>';
+                        http_response_code(400);
+                        exit;}
+
+                    handleSubmitResponsesRequest($pdo, $inputXml->responses, $formId);
+                    break;
+                
+                default:
+                    sendXmlHeader();
+                    echo '<error>Invalid action for PUT request</error>';
+                    http_response_code(400);
+                    exit;
+            }
+        } else {
             sendXmlHeader();
-            echo '<error>Invalid action for PUT request or missing formId</error>';
+            echo '<error>Action parameter is required for PUT request</error>';
             http_response_code(400);
             exit;
         }
-        
-        handleSubmitResponsesRequest($pdo, $inputXml->responses, $formId);
-        
-        break;
-               
+        break;    
     case 'GET':
         if (isset($_GET['action'])) {
             $action = $_GET['action'];
@@ -185,7 +198,8 @@ function handleGetQuestionsRequest() {
         echo '<error>Query failed: ' . $e->getMessage() . '</error>';
     }
 }
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
 function handleSubmitResponsesRequest($pdo, $inputXml, $formId) {
     $xmlData = new SimpleXMLElement('<responses></responses>');
 
@@ -243,46 +257,74 @@ function handleSubmitResponsesRequest($pdo, $inputXml, $formId) {
         echo $xmlData->asXML();
     }
 }
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-function handleFetchResponsesRequest() {
+
+function handleFetchResponsesRequest($currentPage = 1, $pageSize = 10, $emailFilter = null) {
     $pdo = getDatabaseConnection();
-    $currentPage = 1;        
-    $pageSize = 10; 
-    $totalResponses = getTotalResponses($pdo); 
 
     try {
+        $baseQuery = "SELECT ResponseID, FullName, EmailAddress, Description, Gender, ProgrammingStack, Certificates, DateResponded FROM responses";
+        $whereClauses = [];
+        $queryParams = [];
+
+        if ($emailFilter) {
+            $whereClauses[] = 'EmailAddress = :email';
+            $queryParams[':email'] = $emailFilter;
+        }
+
+        if (!empty($whereClauses)) {
+            $baseQuery .= ' WHERE ' . implode(' AND ', $whereClauses);
+        }
+
+        $totalQuery = "SELECT COUNT(*) FROM responses";
+        if (!empty($whereClauses)) {
+            $totalQuery .= ' WHERE ' . implode(' AND ', $whereClauses);
+        }
+        $totalStmt = $pdo->prepare($totalQuery);
+        foreach ($queryParams as $key => &$val) {
+            $totalStmt->bindParam($key, $val);
+        }
+        $totalStmt->execute();
+        $totalResponses = $totalStmt->fetchColumn();
+
+        $lastPage = ceil($totalResponses / $pageSize);
         $offset = ($currentPage - 1) * $pageSize;
-        $stmt = $pdo->prepare("SELECT * FROM responses LIMIT :offset, :pageSize");
+
+        $finalQuery = $baseQuery . " LIMIT :offset, :pageSize";
+        $stmt = $pdo->prepare($finalQuery);
+        foreach ($queryParams as $key => &$val) {
+            $stmt->bindParam($key, $val);
+        }
         $stmt->bindParam(':offset', $offset, PDO::PARAM_INT);
         $stmt->bindParam(':pageSize', $pageSize, PDO::PARAM_INT);
         $stmt->execute();
         $responses = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        $xmlData = new SimpleXMLElement('< question_responses/ >');
+        $xmlData = new SimpleXMLElement('<question_responses/>');
         $xmlData->addAttribute('current_page', (string)$currentPage);
-        $xmlData->addAttribute('last_page', (string)ceil($totalResponses / $pageSize));
+        $xmlData->addAttribute('last_page', (string)$lastPage);
         $xmlData->addAttribute('page_size', (string)$pageSize);
         $xmlData->addAttribute('total_count', (string)$totalResponses);
 
         foreach ($responses as $response) {
             $responseElement = $xmlData->addChild('question_response');
-            foreach (['ResponseID', 'FullName', 'EmailAddress', 'Description', 'Gender', 'ProgrammingStack', 'DateResponded'] as $field) {
-                $value = isset($response[$field]) ? htmlspecialchars($response[$field], ENT_XML1, 'UTF-8') : '';
-                if ($field === 'ProgrammingStack') {
-                    $responseElement->addChild(strtolower($field), $value);
-                } else {
-                    $responseElement->addChild(strtolower($field), $value);
-                }
-            }
+            $responseElement->addChild('response_id', htmlspecialchars($response['ResponseID'], ENT_XML1, 'UTF-8'));
+            $responseElement->addChild('full_name', htmlspecialchars($response['FullName'], ENT_XML1, 'UTF-8'));
+            $responseElement->addChild('email_address', htmlspecialchars($response['EmailAddress'], ENT_XML1, 'UTF-8'));
+            $responseElement->addChild('description', htmlspecialchars($response['Description'], ENT_XML1, 'UTF-8'));
+            $responseElement->addChild('gender', htmlspecialchars($response['Gender'], ENT_XML1, 'UTF-8'));
+            $programmingStack = str_replace(",", ",", htmlspecialchars($response['ProgrammingStack'], ENT_XML1, 'UTF-8')); 
+            $responseElement->addChild('programming_stack', $programmingStack);
             
             $certificatesElement = $responseElement->addChild('certificates');
-            $certificates = json_decode($response['Certificates'] ?? '[]', true);
-            if (is_array($certificates)) {
-                foreach ($certificates as $certificate) {
-                    $certificateElement = $certificatesElement->addChild('certificate', htmlspecialchars($certificate['Name'] ?? '', ENT_XML1, 'UTF-8'));
-                    $certificateElement->addAttribute('id', $certificate['ID'] ?? '');
+            $certificates = json_decode($response['Certificates'], true);
+            if ($certificates) {
+                foreach ($certificates as $id => $name) {
+                    $certificateElement = $certificatesElement->addChild('certificate', htmlspecialchars($name, ENT_XML1, 'UTF-8'));
+                    $certificateElement->addAttribute('id', (string)$id);
                 }
             }
+
+            $responseElement->addChild('date_responded', htmlspecialchars($response['DateResponded'], ENT_XML1, 'UTF-8'));
         }
 
         sendXmlHeader();
@@ -294,11 +336,7 @@ function handleFetchResponsesRequest() {
         $xmlError->addChild('message', 'Failed to fetch responses: ' . $e->getMessage());
         echo $xmlError->asXML();
     }
-    
-    handleSubmitResponsesRequest();
-
 }
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 function handleDownloadCertificateRequest() {
     $pdo = getDatabaseConnection();
@@ -324,7 +362,7 @@ function handleDownloadCertificateRequest() {
         sendErrorResponse('Failed to download certificate: ' . $e->getMessage(), 500);
     }
 }
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 
 function sendErrorResponse($message, $code) {
     http_response_code($code);
@@ -333,7 +371,7 @@ function sendErrorResponse($message, $code) {
     sendXmlHeader();
     echo $xmlData->asXML();
 }
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 
 function sendFile($filePath) {
     if (file_exists($filePath) && is_readable($filePath)) {
@@ -342,7 +380,7 @@ function sendFile($filePath) {
         sendErrorResponse('File does not exist or is not readable', 404);
     }
 }
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 
 function handleGetAllResponsesAndQuestions() {
     $pdo = getDatabaseConnection();
@@ -360,7 +398,7 @@ function handleGetAllResponsesAndQuestions() {
         echo '<error>Failed to fetch data: ' . $e->getMessage() . '</error>';
     }
 }
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 function arrayToXml($array, &$xml_user_info) {
     foreach ($array as $key => $value) {
         if (is_array($value)) {
@@ -381,7 +419,7 @@ function arrayToXml($array, &$xml_user_info) {
         }
     }
 }
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 function getTotalResponses($pdo) {
     try {
         $stmt = $pdo->query("SELECT COUNT(*) FROM responses");
@@ -393,7 +431,7 @@ function getTotalResponses($pdo) {
         exit;
     }
 }
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 function sendXmlHeader() {
     header("Content-Type: application/xml; charset=utf-8");
 }
