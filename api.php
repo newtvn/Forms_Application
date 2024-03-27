@@ -199,51 +199,55 @@ function handleGetQuestionsRequest() {
     }
 }
 
-
 function handleSubmitResponsesRequest($pdo, $inputXml, $formId) {
     $xmlData = new SimpleXMLElement('<responses></responses>');
 
     try {
         $pdo->beginTransaction();
 
-        $responseXml = $inputXml->question_response;
-        
-        $fullName = (string)$responseXml->full_name;
-        $emailAddress = (string)$responseXml->email_address;
-        $description = (string)$responseXml->description;
-        $gender = (string)$responseXml->gender;
-        $programmingStack = (string)$responseXml->programming_stack;
-        $dateResponded = (string)$responseXml->date_responded;
+        foreach ($inputXml->question_response as $responseXml) {
+            $fullName = (string)$responseXml->FullName;
+            $emailAddress = (string)$responseXml->EmailAddress;
+            $description = (string)$responseXml->Description;
+            $gender = (string)$responseXml->Gender;
+            $programmingStack = (string)$responseXml->ProgrammingStack;
+            $certificates = (string)$responseXml->Certificates; 
+            $dateResponded = (string)$responseXml->DateResponded;
+            $questionId = (string)$responseXml->QuestionID; 
 
-        $response = [
-            'FullName' => $fullName,
-            'EmailAddress' => $emailAddress,
-            'Description' => $description,
-            'Gender' => $gender,
-            'ProgrammingStack' => $programmingStack,
-            'DateResponded' => $dateResponded
-        ];
-        
-        $questionResponseXml = new SimpleXMLElement('<question_response></question_response>');
-        arrayToXml($response, $questionResponseXml);
-        
-        $stmt = $pdo->prepare("
-            INSERT INTO responses (QuestionResponse, FormID, DateCreated, DateModified) 
-            VALUES (:questionResponse, :formId, NOW(), NOW())
-        ");
-        $stmt->execute([
-            'questionResponse' => $questionResponseXml->asXML(),
-            'formId' => $formId
-        ]);
-        
-        $responseId = $pdo->lastInsertId();
+            $response = [
+                'FullName' => $fullName,
+                'EmailAddress' => $emailAddress,
+                'Description' => $description,
+                'Gender' => $gender,
+                'ProgrammingStack' => $programmingStack,
+                'Certificates' => $certificates,
+                'DateResponded' => $dateResponded
+            ];
+            $questionResponseXml = new SimpleXMLElement('<question_response></question_response>');
+            arrayToXml($response, $questionResponseXml);
+            $xmlAsString = $questionResponseXml->asXML();
+
+            $stmt = $pdo->prepare("
+                INSERT INTO responses (QuestionResponse, FormID, QuestionID, DateCreated, DateModified) 
+                VALUES (:questionResponse, :formId, :questionId, NOW(), NOW())
+            ");
+            
+            $stmt->execute([
+                'questionResponse' => $xmlAsString,
+                'formId' => $formId,
+                'questionId' => $questionId
+            ]);
+            
+            $responseId = $pdo->lastInsertId();
+
+            $responseElement = $xmlData->addChild('response');
+            $responseElement->addChild('id', $responseId);
+            $responseElement->addChild('status', 'success');
+        }
         
         $pdo->commit();
 
-        $responseElement = $xmlData->addChild('response');
-        $responseElement->addChild('id', $responseId);
-        $responseElement->addChild('status', 'success');
-        
         sendXmlHeader();
         echo $xmlData->asXML();
 
@@ -255,86 +259,6 @@ function handleSubmitResponsesRequest($pdo, $inputXml, $formId) {
         $xmlData->addChild('message', 'Failed to submit responses: ' . $e->getMessage());
         sendXmlHeader();
         echo $xmlData->asXML();
-    }
-}
-
-function handleFetchResponsesRequest($currentPage = 1, $pageSize = 10, $emailFilter = null) {
-    $pdo = getDatabaseConnection();
-
-    try {
-        $baseQuery = "SELECT ResponseID, FullName, EmailAddress, Description, Gender, ProgrammingStack, Certificates, DateResponded FROM responses";
-        $whereClauses = [];
-        $queryParams = [];
-
-        if ($emailFilter) {
-            $whereClauses[] = 'EmailAddress = :email';
-            $queryParams[':email'] = $emailFilter;
-        }
-
-        if (!empty($whereClauses)) {
-            $baseQuery .= ' WHERE ' . implode(' AND ', $whereClauses);
-        }
-
-        $totalQuery = "SELECT COUNT(*) FROM responses";
-        if (!empty($whereClauses)) {
-            $totalQuery .= ' WHERE ' . implode(' AND ', $whereClauses);
-        }
-        $totalStmt = $pdo->prepare($totalQuery);
-        foreach ($queryParams as $key => &$val) {
-            $totalStmt->bindParam($key, $val);
-        }
-        $totalStmt->execute();
-        $totalResponses = $totalStmt->fetchColumn();
-
-        $lastPage = ceil($totalResponses / $pageSize);
-        $offset = ($currentPage - 1) * $pageSize;
-
-        $finalQuery = $baseQuery . " LIMIT :offset, :pageSize";
-        $stmt = $pdo->prepare($finalQuery);
-        foreach ($queryParams as $key => &$val) {
-            $stmt->bindParam($key, $val);
-        }
-        $stmt->bindParam(':offset', $offset, PDO::PARAM_INT);
-        $stmt->bindParam(':pageSize', $pageSize, PDO::PARAM_INT);
-        $stmt->execute();
-        $responses = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        $xmlData = new SimpleXMLElement('<question_responses/>');
-        $xmlData->addAttribute('current_page', (string)$currentPage);
-        $xmlData->addAttribute('last_page', (string)$lastPage);
-        $xmlData->addAttribute('page_size', (string)$pageSize);
-        $xmlData->addAttribute('total_count', (string)$totalResponses);
-
-        foreach ($responses as $response) {
-            $responseElement = $xmlData->addChild('question_response');
-            $responseElement->addChild('response_id', htmlspecialchars($response['ResponseID'], ENT_XML1, 'UTF-8'));
-            $responseElement->addChild('full_name', htmlspecialchars($response['FullName'], ENT_XML1, 'UTF-8'));
-            $responseElement->addChild('email_address', htmlspecialchars($response['EmailAddress'], ENT_XML1, 'UTF-8'));
-            $responseElement->addChild('description', htmlspecialchars($response['Description'], ENT_XML1, 'UTF-8'));
-            $responseElement->addChild('gender', htmlspecialchars($response['Gender'], ENT_XML1, 'UTF-8'));
-            $programmingStack = str_replace(",", ",", htmlspecialchars($response['ProgrammingStack'], ENT_XML1, 'UTF-8')); 
-            $responseElement->addChild('programming_stack', $programmingStack);
-            
-            $certificatesElement = $responseElement->addChild('certificates');
-            $certificates = json_decode($response['Certificates'], true);
-            if ($certificates) {
-                foreach ($certificates as $id => $name) {
-                    $certificateElement = $certificatesElement->addChild('certificate', htmlspecialchars($name, ENT_XML1, 'UTF-8'));
-                    $certificateElement->addAttribute('id', (string)$id);
-                }
-            }
-
-            $responseElement->addChild('date_responded', htmlspecialchars($response['DateResponded'], ENT_XML1, 'UTF-8'));
-        }
-
-        sendXmlHeader();
-        echo $xmlData->asXML();
-    } catch (\PDOException $e) {
-        http_response_code(500);
-        sendXmlHeaderIfNotAlreadySent();
-        $xmlError = new SimpleXMLElement('<error/>');
-        $xmlError->addChild('message', 'Failed to fetch responses: ' . $e->getMessage());
-        echo $xmlError->asXML();
     }
 }
 
@@ -382,60 +306,97 @@ function sendFile($filePath) {
 }
 
 
-function handleGetAllResponsesAndQuestions() {
-    $pdo = getDatabaseConnection();
-    try {
-        $stmtQuestions = $pdo->query("SELECT * FROM questions");
-        $questions = $stmtQuestions->fetchAll();
-        $stmtResponses = $pdo->query("SELECT * FROM responses");
-        $responses = $stmtResponses->fetchAll();
-        $xmlData = new SimpleXMLElement('<?xml version="1.0"?><data></data>');
-        arrayToXml(['questions' => $questions, 'responses' => $responses], $xmlData);
-        sendXmlHeader();
-        echo $xmlData->asXML();
-    } catch (\PDOException $e) {
-        http_response_code(500);
-        echo '<error>Failed to fetch data: ' . $e->getMessage() . '</error>';
+function sendXmlHeaderIfNotAlreadySent() {
+    if (!headers_sent()) {
+        header('Content-Type: application/xml; charset=utf-8');
     }
 }
 
-function arrayToXml($array, &$xml_user_info) {
+function handleGetAllResponsesAndQuestions($pdo, $currentPage = 1, $pageSize = 10, $emailFilter = null) {
+    $pdo = getDatabaseConnection();
+    try {
+        $baseQuery = "SELECT ResponsesID, QuestionResponse, DateCreated as DateResponded FROM responses";
+        $whereClauses = [];
+        $queryParams = [];
+        if ($emailFilter) {
+            $whereClauses[] = 'QuestionResponse LIKE :email';
+            $queryParams[':email'] = '%' . $emailFilter . '%';
+        }
+        if (!empty($whereClauses)) {
+            $baseQuery .= ' WHERE ' . implode(' AND ', $whereClauses);
+        }
+        $totalQuery = "SELECT COUNT(*) FROM responses";
+        if (!empty($whereClauses)) {
+            $totalQuery .= ' WHERE ' . implode(' AND ', $whereClauses);
+        }
+        $totalStmt = $pdo->prepare($totalQuery);
+        foreach ($queryParams as $key => &$val) {
+            $totalStmt->bindParam($key, $val);
+        }
+        $totalStmt->execute();
+        $totalResponses = $totalStmt->fetchColumn();
+        $lastPage = ceil($totalResponses / $pageSize);
+        $finalQuery = $baseQuery . " LIMIT :offset, :pageSize";
+        $stmt = $pdo->prepare($finalQuery);
+        foreach ($queryParams as $key => &$val) {
+            $stmt->bindParam($key, $val);
+        }
+        $offset = ($currentPage - 1) * $pageSize;
+        $stmt->bindParam(':offset', $offset, PDO::PARAM_INT);
+        $stmt->bindParam(':pageSize', $pageSize, PDO::PARAM_INT);
+        $stmt->execute();
+        $responses = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $xmlData = new SimpleXMLElement('<question_responses/>');
+        $xmlData->addAttribute('current_page', (string)$currentPage);
+        $xmlData->addAttribute('last_page', (string)$lastPage);
+        $xmlData->addAttribute('page_size', (string)$pageSize);
+        $xmlData->addAttribute('total_count', (string)$totalResponses);
+        foreach ($responses as $response) {
+            if (!empty($response['QuestionResponse'])) {
+                $responseXML = simplexml_load_string($response['QuestionResponse'], 'SimpleXMLElement', LIBXML_NOERROR | LIBXML_NOWARNING);
+                if ($responseXML !== false) {
+                    $responseElement = $xmlData->addChild('question_response');
+                    $responseElement->addChild('response_id', $response['ResponsesID']);
+                    foreach ($responseXML->children() as $key => $value) {
+                        $child = $responseElement->addChild($key);
+                        $child[0] = htmlspecialchars((string)$value, ENT_XML1, 'UTF-8');
+                    }
+                    $responseElement->addChild('date_responded', $response['DateResponded']);
+                }
+            }
+        }
+        header('Content-Type: application/xml; charset=utf-8');
+        echo $xmlData->asXML();
+    } catch (PDOException $e) {
+        http_response_code(500);
+        header('Content-Type: application/xml; charset=utf-8');
+        $xmlError = new SimpleXMLElement('<error/>');
+        $xmlError->addChild('message', 'Failed to fetch responses: ' . $e->getMessage());
+        echo $xmlError->asXML();
+    }
+}
+
+    
+
+function arrayToXml($array, &$xml) {
     foreach ($array as $key => $value) {
         if (is_array($value)) {
             if (!is_numeric($key)) {
-                $subnode = $xml_user_info->addChild("$key");
+                $subnode = $xml->addChild("$key");
                 arrayToXml($value, $subnode);
             } else {
-                $subnode = $xml_user_info->addChild("question");
+                $subnode = $xml->addChild("item$key");
                 arrayToXml($value, $subnode);
             }
         } else {
-            if (preg_match('/^[a-z_]\w*$/i', $key)) {
-                $xml_user_info->addChild("$key", htmlspecialchars("$value"));
-            } else {
-                $validKey = preg_replace('/[^a-z_]\w*/i', '_', $key);
-                $xml_user_info->addChild("$validKey", htmlspecialchars("$value"));
-            }
+            $xml->addChild("$key", htmlspecialchars("$value"));
         }
     }
 }
 
-function getTotalResponses($pdo) {
-    try {
-        $stmt = $pdo->query("SELECT COUNT(*) FROM responses");
-        $result = $stmt->fetchColumn();
-        return $result;
-    } catch (\PDOException $e) {
-        http_response_code(500);
-        echo '<error>Error getting total responses: ' . $e->getMessage() . '</error>';
-        exit;
-    }
-}
-
 function sendXmlHeader() {
-    header("Content-Type: application/xml; charset=utf-8");
+    header('Content-Type: application/xml');
 }
-
 ?>
 
 
