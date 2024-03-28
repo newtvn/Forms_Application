@@ -199,65 +199,76 @@ function handleGetQuestionsRequest() {
     }
 }
 
+function generateUniqueParticipantID($pdo) {
+    $unique = false;
+    $participantId = 0;
+    $maxAttempts = 10; 
+    $attempt = 0;
+
+    while (!$unique && $attempt < $maxAttempts) {
+        $participantId = mt_rand(1000000, 9999999); 
+
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM participants WHERE ParticipantID = :participantId");
+        $stmt->execute(['participantId' => $participantId]);
+        $unique = ($stmt->fetchColumn() == 0);
+        $attempt++;
+    }
+
+    if (!$unique) {
+        throw new Exception("Failed to generate a unique ParticipantID after $maxAttempts attempts.");
+    }
+
+    return $participantId;
+}
+
+
 function handleSubmitResponsesRequest($pdo, $inputXml, $formId) {
-    $xmlData = new SimpleXMLElement('<responses></responses>');
+    $participantId = generateUniqueParticipantID($pdo); 
 
     try {
         $pdo->beginTransaction();
 
-        foreach ($inputXml->question_response as $responseXml) {
-            $fullName = (string)$responseXml->FullName;
-            $emailAddress = (string)$responseXml->EmailAddress;
-            $description = (string)$responseXml->Description;
-            $gender = (string)$responseXml->Gender;
-            $programmingStack = (string)$responseXml->ProgrammingStack;
-            $certificates = (string)$responseXml->Certificates; 
-            $dateResponded = (string)$responseXml->DateResponded;
-            $questionId = (string)$responseXml->QuestionID; 
+        $stmt = $pdo->prepare("
+            INSERT INTO participants (ParticipantID, FormID, DateCreated, DateModified) 
+            VALUES (:participantId, :formId, NOW(), NOW())
+        ");
+        $stmt->execute([
+            'participantId' => $participantId,
+            'formId' => $formId
+        ]);
 
-            $response = [
-                'FullName' => $fullName,
-                'EmailAddress' => $emailAddress,
-                'Description' => $description,
-                'Gender' => $gender,
-                'ProgrammingStack' => $programmingStack,
-                'Certificates' => $certificates,
-                'DateResponded' => $dateResponded
-            ];
-            $questionResponseXml = new SimpleXMLElement('<question_response></question_response>');
-            arrayToXml($response, $questionResponseXml);
-            $xmlAsString = $questionResponseXml->asXML();
+        foreach ($inputXml->question_response as $responseXml) {
+            $questionId = (int)$responseXml->QuestionID;
+            $responseText = (string)$responseXml->Response;
 
             $stmt = $pdo->prepare("
-                INSERT INTO responses (QuestionResponse, FormID, QuestionID, DateCreated, DateModified) 
-                VALUES (:questionResponse, :formId, :questionId, NOW(), NOW())
+                INSERT INTO responses (ParticipantID, FormID, QuestionID, QuestionResponse, DateCreated, DateModified) 
+                VALUES (:participantId, :formId, :questionId, :questionResponse, NOW(), NOW())
             ");
-            
             $stmt->execute([
-                'questionResponse' => $xmlAsString,
+                'participantId' => $participantId,
                 'formId' => $formId,
-                'questionId' => $questionId
+                'questionId' => $questionId,
+                'questionResponse' => $responseText
             ]);
-            
-            $responseId = $pdo->lastInsertId();
-
-            $responseElement = $xmlData->addChild('response');
-            $responseElement->addChild('id', $responseId);
-            $responseElement->addChild('status', 'success');
         }
-        
+
         $pdo->commit();
 
         sendXmlHeader();
+        $xmlData = new SimpleXMLElement('<success></success>');
+        $xmlData->addChild('message', 'Responses have been successfully submitted.');
+        $xmlData->addChild('participantId', $participantId); 
         echo $xmlData->asXML();
 
     } catch (\PDOException $e) {
-        $pdo->rollBack();
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         http_response_code(500);
-
+        sendXmlHeader();
         $xmlData = new SimpleXMLElement('<error></error>');
         $xmlData->addChild('message', 'Failed to submit responses: ' . $e->getMessage());
-        sendXmlHeader();
         echo $xmlData->asXML();
     }
 }
@@ -299,7 +310,6 @@ function sendErrorResponse($message, $code) {
 
 function sendFile($filePath) {
     if (file_exists($filePath) && is_readable($filePath)) {
-        // Send the file with headers
     } else {
         sendErrorResponse('File does not exist or is not readable', 404);
     }
@@ -313,7 +323,6 @@ function sendXmlHeaderIfNotAlreadySent() {
 }
 
 function handleGetAllResponsesAndQuestions($pdo, $currentPage = 1, $pageSize = 10, $emailFilter = null) {
-    $pdo = getDatabaseConnection();
     try {
         $baseQuery = "SELECT ResponsesID, QuestionResponse, DateCreated as DateResponded FROM responses";
         $whereClauses = [];
@@ -325,10 +334,8 @@ function handleGetAllResponsesAndQuestions($pdo, $currentPage = 1, $pageSize = 1
         if (!empty($whereClauses)) {
             $baseQuery .= ' WHERE ' . implode(' AND ', $whereClauses);
         }
-        $totalQuery = "SELECT COUNT(*) FROM responses";
-        if (!empty($whereClauses)) {
-            $totalQuery .= ' WHERE ' . implode(' AND ', $whereClauses);
-        }
+
+        $totalQuery = "SELECT COUNT(*) FROM responses" . (!empty($whereClauses) ? ' WHERE ' . implode(' AND ', $whereClauses) : '');
         $totalStmt = $pdo->prepare($totalQuery);
         foreach ($queryParams as $key => &$val) {
             $totalStmt->bindParam($key, $val);
@@ -336,6 +343,7 @@ function handleGetAllResponsesAndQuestions($pdo, $currentPage = 1, $pageSize = 1
         $totalStmt->execute();
         $totalResponses = $totalStmt->fetchColumn();
         $lastPage = ceil($totalResponses / $pageSize);
+
         $finalQuery = $baseQuery . " LIMIT :offset, :pageSize";
         $stmt = $pdo->prepare($finalQuery);
         foreach ($queryParams as $key => &$val) {
@@ -346,27 +354,24 @@ function handleGetAllResponsesAndQuestions($pdo, $currentPage = 1, $pageSize = 1
         $stmt->bindParam(':pageSize', $pageSize, PDO::PARAM_INT);
         $stmt->execute();
         $responses = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
         $xmlData = new SimpleXMLElement('<question_responses/>');
         $xmlData->addAttribute('current_page', (string)$currentPage);
         $xmlData->addAttribute('last_page', (string)$lastPage);
         $xmlData->addAttribute('page_size', (string)$pageSize);
         $xmlData->addAttribute('total_count', (string)$totalResponses);
+
         foreach ($responses as $response) {
-            if (!empty($response['QuestionResponse'])) {
-                $responseXML = simplexml_load_string($response['QuestionResponse'], 'SimpleXMLElement', LIBXML_NOERROR | LIBXML_NOWARNING);
-                if ($responseXML !== false) {
-                    $responseElement = $xmlData->addChild('question_response');
-                    $responseElement->addChild('response_id', $response['ResponsesID']);
-                    foreach ($responseXML->children() as $key => $value) {
-                        $child = $responseElement->addChild($key);
-                        $child[0] = htmlspecialchars((string)$value, ENT_XML1, 'UTF-8');
-                    }
-                    $responseElement->addChild('date_responded', $response['DateResponded']);
-                }
-            }
+            $responseElement = $xmlData->addChild('question_response');
+            $responseElement->addChild('response_id', $response['ResponsesID']);
+            $responseValue = htmlspecialchars($response['QuestionResponse'], ENT_XML1, 'UTF-8');
+            $responseElement->addChild('Response', $responseValue);
+            $responseElement->addChild('date_responded', $response['DateResponded']);
         }
+
         header('Content-Type: application/xml; charset=utf-8');
         echo $xmlData->asXML();
+
     } catch (PDOException $e) {
         http_response_code(500);
         header('Content-Type: application/xml; charset=utf-8');
@@ -375,8 +380,62 @@ function handleGetAllResponsesAndQuestions($pdo, $currentPage = 1, $pageSize = 1
         echo $xmlError->asXML();
     }
 }
+   
 
-    
+function getAllResponsesByParticipant($pdo, $participantId, $currentPage = 1, $pageSize = 10) {
+    try {
+        $offset = ($currentPage - 1) * $pageSize;
+
+       $baseQuery = "
+            SELECT r.ResponsesID, r.QuestionResponse, r.DateCreated as DateResponded, /* other fields */
+            FROM responses r
+            WHERE r.ParticipantID = :participantId
+        ";
+        $countStmt = $pdo->prepare("SELECT COUNT(*) FROM responses WHERE ParticipantID = :participantId");
+        $countStmt->execute(['participantId' => $participantId]);
+        $totalCount = $countStmt->fetchColumn();
+        $lastPage = ceil($totalCount / $pageSize);
+        $stmt = $pdo->prepare("{$baseQuery} LIMIT :offset, :pageSize");
+        $stmt->bindParam(':participantId', $participantId, PDO::PARAM_INT);
+        $stmt->bindParam(':offset', $offset, PDO::PARAM_INT);
+        $stmt->bindParam(':pageSize', $pageSize, PDO::PARAM_INT);
+        $stmt->execute();
+
+        $responses = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $xmlData = new SimpleXMLElement('<question_responses/>');
+        $xmlData->addAttribute('current_page', (string)$currentPage);
+        $xmlData->addAttribute('last_page', (string)$lastPage);
+        $xmlData->addAttribute('page_size', (string)$pageSize);
+        $xmlData->addAttribute('total_count', (string)$totalCount);
+
+        foreach ($responses as $response) {
+            $responseElement = $xmlData->addChild('question_response');
+            $responseElement->addChild('response_id', $response['ResponsesID']);
+            // Other child elements like full_name, email_address, etc. should be added here similarly.
+            // ...
+        $certificatesElement = $responseElement->addChild('certificates');
+        $certStmt = $pdo->prepare("SELECT * FROM certificates WHERE ResponsesID = :responseId");
+        $certStmt->execute(['responseId' => $response['ResponsesID']]);
+        $certificates = $certStmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($certificates as $certificate) {
+            $certificateElement = $certificatesElement->addChild('certificate', $certificate['FileName']);
+            $certificateElement->addAttribute('id', $certificate['CertificateID']);
+        }
+        $responseElement->addChild('date_responded', $response['DateResponded']);
+    }
+    header('Content-Type: application/xml; charset=utf-8');
+    echo $xmlData->asXML();
+
+} catch (PDOException $e) {
+    http_response_code(500);
+    header('Content-Type: application/xml; charset=utf-8');
+    $xmlError = new SimpleXMLElement('<error/>');
+    $xmlError->addChild('message', 'Failed to fetch responses: ' . $e->getMessage());
+    echo $xmlError->asXML();
+}
+
+
 
 function arrayToXml($array, &$xml) {
     foreach ($array as $key => $value) {
